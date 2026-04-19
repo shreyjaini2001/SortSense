@@ -1,7 +1,6 @@
 from backend.models import gemini
-from backend.triage import food, clothing, electronics
-
-CONFIDENCE_THRESHOLD = 0.70
+from backend.triage import food, clothing, electronics, general
+from backend.triage.constants import CONFIDENCE_THRESHOLD
 
 
 async def classify(b64_image: str, weight_grams: float | None = None) -> dict:
@@ -29,6 +28,8 @@ async def classify(b64_image: str, weight_grams: float | None = None) -> dict:
         result = await clothing.analyze(b64_image)
     elif category == "electronics":
         result = await electronics.analyze(b64_image)
+    elif category == "general":
+        result = await general.analyze(b64_image, category_result.get("item_name", "item"))
     else:
         result = {
             "category": "unknown",

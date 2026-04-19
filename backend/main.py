@@ -7,20 +7,23 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+import asyncio
 from backend.camera.capture import capture_frame, release_camera
 from backend.triage.orchestrator import classify
 from backend.db.models import init_db, get_db, TriageLog
+from backend.models import ocr
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    await asyncio.to_thread(ocr.get_reader)
     yield
     release_camera()
 

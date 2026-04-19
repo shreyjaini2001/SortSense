@@ -1,20 +1,20 @@
 import os
+import asyncio
 import httpx
 from backend.models import gemini, ocr
+from backend.triage.constants import CONFIDENCE_THRESHOLD
+from backend.triage.utils import cant_see_item
 
 CPSC_API_URL = os.getenv("CPSC_API_URL", "https://www.saferproducts.gov/RestWebServices/Recall")
-CONFIDENCE_THRESHOLD = 0.70
+
+_CANT_SEE_PHRASES = ["no electronic", "not visible", "no item", "person", "not an electronic"]
 
 
 async def analyze(b64_image: str) -> dict:
-    """
-    Multi-signal electronics triage.
-    Signal 1: Gemini vision — physical damage assessment
-    Signal 2: EasyOCR model number extraction
-    Signal 3: CPSC recall database lookup
-    """
-    vision = gemini.analyze_electronics(b64_image)
-    model_info = ocr.extract_model_number(b64_image)
+    vision, model_info = await asyncio.gather(
+        asyncio.to_thread(gemini.analyze_electronics, b64_image),
+        asyncio.to_thread(ocr.extract_model_number, b64_image),
+    )
 
     recalled = False
     recall_note = None
@@ -32,13 +32,8 @@ async def analyze(b64_image: str) -> dict:
 
     functional_prob = vision.get("functional_probability", 0.0)
     confidence = vision.get("confidence", 0.0)
-    issues = vision.get("issues", [])
 
-    cant_see = any(
-        phrase in " ".join(issues).lower()
-        for phrase in ["no electronic", "not visible", "no item", "person", "not an electronic"]
-    )
-    if cant_see:
+    if cant_see_item(vision.get("issues", []), _CANT_SEE_PHRASES):
         return {
             "category": "electronics",
             "bin": "flag",
@@ -75,7 +70,6 @@ async def analyze(b64_image: str) -> dict:
 
 
 async def _check_cpsc_recall(model_number: str) -> dict:
-    """Check CPSC public recall database for the given model number."""
     try:
         async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
             resp = await client.get(
@@ -93,15 +87,13 @@ async def _check_cpsc_recall(model_number: str) -> dict:
 
 
 def _build_reason(bin_decision: str, vision: dict, functional_prob: float) -> str:
-    reasoning = vision.get("reasoning", "")
-    issues = vision.get("issues", [])
     pct = int(functional_prob * 100)
+    issues = vision.get("issues", [])
+    issue_note = f" Issues: {', '.join(issues)}." if issues else ""
 
     if bin_decision == "resale":
-        return f"Likely functional ({pct}% probability) — ready for Goodwill floor. {reasoning}"
+        return f"Likely functional ({pct}% probability) — ready for Goodwill floor. {vision.get('reasoning', '')}"
     elif bin_decision == "reuse":
-        issue_note = f" Issues: {', '.join(issues)}." if issues else ""
         return f"Partially functional ({pct}%) — routed to repair/reuse partner.{issue_note}"
     else:
-        issue_note = f" Issues: {', '.join(issues)}." if issues else ""
         return f"Non-functional ({pct}%) — routed to e-waste recycling.{issue_note}"

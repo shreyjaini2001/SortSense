@@ -57,17 +57,24 @@ def _parse_json(text: str) -> dict | None:
 
 
 def classify_category(b64_image: str) -> dict:
-    """Detect item category: food | clothing | electronics | unknown."""
+    """Detect item category: food | clothing | electronics | general | unknown."""
     prompt = (
-        "Look at this donated item. Classify it into exactly one category: "
-        "'food', 'clothing', or 'electronics'. "
-        "Reply with JSON only, no markdown, example: {\"category\": \"clothing\", \"confidence\": 0.95}"
+        "Look at this donated item and classify it into exactly one category:\n"
+        "- 'food': any food, drink, packaged edibles, canned goods\n"
+        "- 'clothing': clothes, shoes, bags, accessories, textiles\n"
+        "- 'electronics': phones, laptops, appliances, cables, anything with a plug or battery\n"
+        "- 'general': everything else — books, toys, tools, kitchenware, stationery, pens, paper, "
+        "games, furniture, sporting goods, décor, office supplies\n\n"
+        "Also name the item and estimate condition.\n"
+        "Reply with JSON only, no markdown, example:\n"
+        "{\"category\": \"general\", \"item_name\": \"pen and notepad\", "
+        "\"condition\": \"good\", \"confidence\": 0.95}"
     )
     text = _vision_call(prompt, b64_image)
     result = _parse_json(text)
     if result:
         return result
-    return {"category": "unknown", "confidence": 0.0}
+    return {"category": "unknown", "item_name": "unknown", "condition": "unknown", "confidence": 0.0}
 
 
 def analyze_food(b64_image: str) -> dict:
@@ -102,6 +109,22 @@ def analyze_clothing(b64_image: str) -> dict:
     if result:
         return result
     return {"condition_score": 0, "issues": [], "brand": None, "complete": False, "confidence": 0.0, "reasoning": "Could not analyze"}
+
+
+def analyze_general(b64_image: str) -> dict:
+    """Vision analysis for general goods (books, toys, tools, stationery, etc.)."""
+    prompt = (
+        "Analyze this donated item. Assess its overall condition for resale at a Goodwill store. "
+        "Give a condition score 0-100 (100=like new, 0=destroyed/unusable). "
+        "Reply with JSON only, no markdown, example: "
+        "{\"condition_score\": 80, \"item_name\": \"hardcover book\", "
+        "\"issues\": [], \"confidence\": 0.90, \"reasoning\": \"Book in great condition, no torn pages.\"}"
+    )
+    text = _vision_call(prompt, b64_image)
+    result = _parse_json(text)
+    if result:
+        return result
+    return {"condition_score": 50, "item_name": "item", "issues": [], "confidence": 0.0, "reasoning": "Could not analyze"}
 
 
 def analyze_electronics(b64_image: str) -> dict:

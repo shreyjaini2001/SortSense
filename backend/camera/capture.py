@@ -21,8 +21,10 @@ def capture_frame() -> tuple[bytes, str]:
         with open(tmp_path, "rb") as f:
             raw = f.read()
     finally:
-        if os.path.exists(tmp_path):
+        try:
             os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
 
     if not raw:
         raise RuntimeError("imagesnap returned an empty frame.")

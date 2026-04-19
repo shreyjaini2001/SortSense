@@ -1,20 +1,21 @@
 import os
+import re
+import asyncio
 import httpx
 from backend.models import gemini, ocr
+from backend.triage.constants import CONFIDENCE_THRESHOLD
+from backend.triage.utils import cant_see_item
 
 OFF_API_URL = os.getenv("OFF_API_URL", "https://world.openfoodfacts.org/api/v2")
-CONFIDENCE_THRESHOLD = 0.70
+
+_CANT_SEE_PHRASES = ["no food", "not visible", "no item", "person", "not a food"]
 
 
 async def analyze(b64_image: str, weight_grams: float | None = None) -> dict:
-    """
-    Multi-signal food triage.
-    Signal 1: Gemini vision (damage, mould, contamination)
-    Signal 2: EasyOCR expiry date extraction
-    Signal 3: Weight anomaly vs Open Food Facts (if weight provided)
-    """
-    vision = gemini.analyze_food(b64_image)
-    expiry = ocr.extract_expiry_date(b64_image)
+    vision, expiry = await asyncio.gather(
+        asyncio.to_thread(gemini.analyze_food, b64_image),
+        asyncio.to_thread(ocr.extract_expiry_date, b64_image),
+    )
 
     weight_anomaly = False
     weight_note = None
@@ -31,13 +32,8 @@ async def analyze(b64_image: str, weight_grams: float | None = None) -> dict:
     }
 
     confidence = vision.get("confidence", 0.0)
-    issues = vision.get("issues", [])
 
-    cant_see = any(
-        phrase in " ".join(issues).lower()
-        for phrase in ["no food", "not visible", "no item", "person", "not a food"]
-    )
-    if cant_see:
+    if cant_see_item(vision.get("issues", []), _CANT_SEE_PHRASES):
         return {
             "category": "food",
             "bin": "flag",
@@ -71,7 +67,6 @@ async def analyze(b64_image: str, weight_grams: float | None = None) -> dict:
 
 
 async def _check_weight_anomaly(actual_weight: float) -> dict:
-    """Query Open Food Facts for expected weight; flag if actual is 20%+ off."""
     try:
         async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
             resp = await client.get(
@@ -79,11 +74,9 @@ async def _check_weight_anomaly(actual_weight: float) -> dict:
                 params={"fields": "product_name,quantity", "page_size": 1},
             )
             if resp.status_code == 200:
-                data = resp.json()
-                products = data.get("products", [])
+                products = resp.json().get("products", [])
                 if products:
-                    quantity_str = products[0].get("quantity", "")
-                    expected = _parse_grams(quantity_str)
+                    expected = _parse_grams(products[0].get("quantity", ""))
                     if expected and abs(actual_weight - expected) / expected > 0.20:
                         return {"anomaly": True, "note": f"Expected ~{expected}g, got {actual_weight}g"}
     except Exception:
@@ -92,22 +85,19 @@ async def _check_weight_anomaly(actual_weight: float) -> dict:
 
 
 def _parse_grams(quantity_str: str) -> float | None:
-    import re
     match = re.search(r'(\d+\.?\d*)\s*(g|kg|oz|lb)', quantity_str, re.IGNORECASE)
     if not match:
         return None
     value, unit = float(match.group(1)), match.group(2).lower()
-    conversions = {"g": 1, "kg": 1000, "oz": 28.35, "lb": 453.59}
-    return value * conversions.get(unit, 1)
+    return value * {"g": 1, "kg": 1000, "oz": 28.35, "lb": 453.59}.get(unit, 1)
 
 
 def _build_reason(bin_decision: str, vision: dict, expiry: dict, weight_anomaly: bool) -> str:
-    issues = vision.get("issues", [])
     if bin_decision == "reuse":
         return f"Food item appears safe — {vision.get('reasoning', 'no visible issues detected')}."
     parts = []
-    if issues:
-        parts.append(f"vision issues: {', '.join(issues)}")
+    if vision.get("issues"):
+        parts.append(f"vision issues: {', '.join(vision['issues'])}")
     if expiry.get("expired"):
         parts.append("past expiry date")
     if weight_anomaly:

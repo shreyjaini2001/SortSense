@@ -2,34 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 
 const BIN = {
-  reuse: {
-    bg: 'bg-emerald-500',
-    label: 'GREEN BIN',
-    name: 'REUSE',
-    icon: '♻️',
-    why: null,
-  },
-  resale: {
-    bg: 'bg-blue-500',
-    label: 'BLUE BIN',
-    name: 'RESALE',
-    icon: '🏷️',
-    why: null,
-  },
-  recycle: {
-    bg: 'bg-rose-500',
-    label: 'RED BIN',
-    name: 'RECYCLE',
-    icon: '🗑️',
-    why: null,
-  },
-  flag: {
-    bg: 'bg-amber-400',
-    label: 'HOLD',
-    name: 'GET SUPERVISOR',
-    icon: '⚠️',
-    why: null,
-  },
+  reuse:   { bg: 'bg-emerald-500', label: 'GREEN BIN', name: 'REUSE',          icon: '♻️' },
+  resale:  { bg: 'bg-blue-500',    label: 'BLUE BIN',  name: 'RESALE',         icon: '🏷️' },
+  recycle: { bg: 'bg-rose-500',    label: 'RED BIN',   name: 'RECYCLE',        icon: '🗑️' },
+  flag:    { bg: 'bg-amber-400',   label: 'HOLD',      name: 'GET SUPERVISOR', icon: '⚠️' },
 }
 
 // Trim to first sentence, max 120 chars
@@ -56,6 +32,21 @@ export default function SorterView() {
     ws.onmessage = (e) => { setResult(JSON.parse(e.data)); setLoading(false) }
     return () => ws.close()
   }, [])
+
+  // Speak result when it arrives
+  useEffect(() => {
+    if (!result) return
+    const bin = BIN[result.bin]
+    if (!bin) return
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(
+      `${bin.label}. ${bin.name}. ${firstSentence(result.reason)}`
+    )
+    utterance.rate  = 0.95
+    utterance.pitch = 1
+    utterance.volume = 1
+    window.speechSynthesis.speak(utterance)
+  }, [result])
 
   const scan = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
@@ -210,7 +201,7 @@ export default function SorterView() {
       {/* Scan next */}
       <div className="px-6 pb-8 pt-4">
         <button
-          onClick={() => { setResult(null); setWeight(0) }}
+          onClick={() => { window.speechSynthesis.cancel(); setResult(null); setWeight(0) }}
           className="w-full h-16 rounded-2xl font-black text-xl
                      bg-black/20 text-white border-2 border-white/30
                      hover:bg-black/30 active:scale-95 transition-all duration-150"
