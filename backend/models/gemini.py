@@ -1,89 +1,120 @@
 import os
+import json
+import re
 import base64
-import google.generativeai as genai
-from PIL import Image
-import io
+from openai import OpenAI
+from dotenv import load_dotenv
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-_model = genai.GenerativeModel("gemini-2.0-flash-exp")
+load_dotenv()
+
+_client = None
+MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 
 
-def _image_from_b64(b64: str) -> Image.Image:
-    raw = base64.b64decode(b64)
-    return Image.open(io.BytesIO(raw))
+def get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        api_key = os.getenv("FEATHERLESS_API_KEY")
+        if not api_key:
+            raise RuntimeError("FEATHERLESS_API_KEY not set in .env")
+        _client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.featherless.ai/v1",
+        )
+    return _client
+
+
+def _vision_call(prompt: str, b64_image: str) -> str:
+    """Send a prompt + image to the vision model, return raw text response."""
+    response = get_client().chat.completions.create(
+        model=MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"},
+                    },
+                ],
+            }
+        ],
+        max_tokens=512,
+        temperature=0.1,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _parse_json(text: str) -> dict | None:
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            return None
+    return None
 
 
 def classify_category(b64_image: str) -> dict:
     """Detect item category: food | clothing | electronics | unknown."""
-    img = _image_from_b64(b64_image)
     prompt = (
         "Look at this donated item. Classify it into exactly one category: "
         "'food', 'clothing', or 'electronics'. "
-        "Reply with JSON only: {\"category\": \"<value>\", \"confidence\": <0.0-1.0>}"
+        "Reply with JSON only, no markdown, example: {\"category\": \"clothing\", \"confidence\": 0.95}"
     )
-    response = _model.generate_content([prompt, img])
-    import json, re
-    text = response.text.strip()
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if match:
-        return json.loads(match.group())
+    text = _vision_call(prompt, b64_image)
+    result = _parse_json(text)
+    if result:
+        return result
     return {"category": "unknown", "confidence": 0.0}
 
 
 def analyze_food(b64_image: str) -> dict:
     """Vision analysis for food items."""
-    img = _image_from_b64(b64_image)
     prompt = (
         "Analyze this donated food item. Check for: packaging damage, visible mould, "
         "open containers, foreign contamination, and overall safety. "
-        "Reply with JSON only: "
-        "{\"safe\": <bool>, \"condition\": \"<good|fair|poor>\", "
-        "\"issues\": [<list of issues>], \"confidence\": <0.0-1.0>, "
-        "\"reasoning\": \"<one sentence>\"}"
+        "Reply with JSON only, no markdown, example: "
+        "{\"safe\": true, \"condition\": \"good\", "
+        "\"issues\": [], \"confidence\": 0.92, "
+        "\"reasoning\": \"Packaging intact, no visible damage.\"}"
     )
-    response = _model.generate_content([prompt, img])
-    import json, re
-    text = response.text.strip()
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if match:
-        return json.loads(match.group())
+    text = _vision_call(prompt, b64_image)
+    result = _parse_json(text)
+    if result:
+        return result
     return {"safe": False, "condition": "poor", "issues": [], "confidence": 0.0, "reasoning": "Could not analyze"}
 
 
 def analyze_clothing(b64_image: str) -> dict:
-    """Vision analysis for clothing items — no MobileNet, Gemini only."""
-    img = _image_from_b64(b64_image)
+    """Vision analysis for clothing items."""
     prompt = (
         "Analyze this donated clothing or textile item. Assess: tears, stains, missing buttons, "
         "significant fading, overall wear. Also note brand if visible. "
         "Give a condition score 0-100 (100=like new, 0=destroyed). "
-        "Reply with JSON only: "
-        "{\"condition_score\": <0-100>, \"issues\": [<list>], \"brand\": \"<brand or null>\", "
-        "\"complete\": <bool>, \"confidence\": <0.0-1.0>, \"reasoning\": \"<one sentence>\"}"
+        "Reply with JSON only, no markdown, example: "
+        "{\"condition_score\": 75, \"issues\": [\"minor fading\"], \"brand\": \"Nike\", "
+        "\"complete\": true, \"confidence\": 0.88, \"reasoning\": \"Good condition with minor wear.\"}"
     )
-    response = _model.generate_content([prompt, img])
-    import json, re
-    text = response.text.strip()
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if match:
-        return json.loads(match.group())
+    text = _vision_call(prompt, b64_image)
+    result = _parse_json(text)
+    if result:
+        return result
     return {"condition_score": 0, "issues": [], "brand": None, "complete": False, "confidence": 0.0, "reasoning": "Could not analyze"}
 
 
 def analyze_electronics(b64_image: str) -> dict:
     """Vision analysis for electronics/appliances."""
-    img = _image_from_b64(b64_image)
     prompt = (
         "Analyze this donated electronic item. Check for: cracked screens, missing components, "
         "burnt marks, water damage indicators, physical damage. Estimate functional probability. "
-        "Reply with JSON only: "
-        "{\"functional_probability\": <0.0-1.0>, \"issues\": [<list>], "
-        "\"confidence\": <0.0-1.0>, \"reasoning\": \"<one sentence>\"}"
+        "Reply with JSON only, no markdown, example: "
+        "{\"functional_probability\": 0.80, \"issues\": [\"minor scratch\"], "
+        "\"confidence\": 0.85, \"reasoning\": \"Device appears intact and likely functional.\"}"
     )
-    response = _model.generate_content([prompt, img])
-    import json, re
-    text = response.text.strip()
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if match:
-        return json.loads(match.group())
+    text = _vision_call(prompt, b64_image)
+    result = _parse_json(text)
+    if result:
+        return result
     return {"functional_probability": 0.0, "issues": [], "confidence": 0.0, "reasoning": "Could not analyze"}

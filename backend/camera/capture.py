@@ -1,38 +1,35 @@
-import cv2
 import base64
-import numpy as np
-from PIL import Image
-import io
-
-_camera = None
-
-
-def get_camera():
-    global _camera
-    if _camera is None or not _camera.isOpened():
-        _camera = cv2.VideoCapture(0)
-        # Fixed exposure for consistent MacBook webcam output
-        _camera.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
-        _camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        _camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    return _camera
+import subprocess
+import tempfile
+import os
 
 
 def capture_frame() -> tuple[bytes, str]:
-    """Capture a single frame. Returns (raw_bytes, base64_jpeg)."""
-    cam = get_camera()
-    ret, frame = cam.read()
-    if not ret:
-        raise RuntimeError("Failed to capture frame from webcam")
+    """
+    Capture a single frame via imagesnap (macOS native AVFoundation).
+    Returns (raw_jpeg_bytes, base64_jpeg_string).
+    """
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        tmp_path = tmp.name
 
-    _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-    raw = buffer.tobytes()
+    try:
+        subprocess.run(
+            ["imagesnap", "-w", "1.5", tmp_path],
+            check=True,
+            capture_output=True,
+        )
+        with open(tmp_path, "rb") as f:
+            raw = f.read()
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    if not raw:
+        raise RuntimeError("imagesnap returned an empty frame.")
+
     b64 = base64.b64encode(raw).decode("utf-8")
     return raw, b64
 
 
 def release_camera():
-    global _camera
-    if _camera and _camera.isOpened():
-        _camera.release()
-        _camera = None
+    pass  # imagesnap opens/closes the camera per-capture; nothing to release
