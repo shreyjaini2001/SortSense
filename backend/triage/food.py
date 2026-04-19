@@ -31,6 +31,20 @@ async def analyze(b64_image: str, weight_grams: float | None = None) -> dict:
     }
 
     confidence = vision.get("confidence", 0.0)
+    issues = vision.get("issues", [])
+
+    cant_see = any(
+        phrase in " ".join(issues).lower()
+        for phrase in ["no food", "not visible", "no item", "person", "not a food"]
+    )
+    if cant_see:
+        return {
+            "category": "food",
+            "bin": "flag",
+            "confidence": confidence,
+            "reason": "Place the food item label-side up in front of the camera.",
+            "signals": signals,
+        }
 
     if not vision.get("safe") or expiry.get("expired") or weight_anomaly:
         if confidence >= CONFIDENCE_THRESHOLD:
@@ -59,7 +73,7 @@ async def analyze(b64_image: str, weight_grams: float | None = None) -> dict:
 async def _check_weight_anomaly(actual_weight: float) -> dict:
     """Query Open Food Facts for expected weight; flag if actual is 20%+ off."""
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
             resp = await client.get(
                 f"{OFF_API_URL}/search",
                 params={"fields": "product_name,quantity", "page_size": 1},

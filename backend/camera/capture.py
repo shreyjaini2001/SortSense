@@ -14,7 +14,7 @@ def capture_frame() -> tuple[bytes, str]:
 
     try:
         subprocess.run(
-            ["imagesnap", "-w", "1.5", tmp_path],
+            ["imagesnap", "-w", "3", tmp_path],
             check=True,
             capture_output=True,
         )

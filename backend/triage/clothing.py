@@ -13,10 +13,17 @@ async def analyze(b64_image: str) -> dict:
 
     condition_score = vision.get("condition_score", 0)
     confidence = vision.get("confidence", 0.0)
+    issues = vision.get("issues", [])
 
-    if confidence < CONFIDENCE_THRESHOLD:
+    # Guard: model can't see the item clearly — flag rather than misroute
+    cant_see = any(
+        phrase in " ".join(issues).lower()
+        for phrase in ["not visible", "no item", "person", "not a cloth", "not textile", "not clearly"]
+    )
+
+    if cant_see or confidence < CONFIDENCE_THRESHOLD:
         bin_decision = "flag"
-        reason = "Item needs human review — confidence too low to route automatically."
+        reason = "Place the item flat in front of the camera — item not clearly visible for assessment."
     elif condition_score >= 70:
         bin_decision = "resale"
         reason = _build_reason("resale", vision, condition_score)

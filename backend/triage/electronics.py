@@ -32,6 +32,21 @@ async def analyze(b64_image: str) -> dict:
 
     functional_prob = vision.get("functional_probability", 0.0)
     confidence = vision.get("confidence", 0.0)
+    issues = vision.get("issues", [])
+
+    cant_see = any(
+        phrase in " ".join(issues).lower()
+        for phrase in ["no electronic", "not visible", "no item", "person", "not an electronic"]
+    )
+    if cant_see:
+        return {
+            "category": "electronics",
+            "bin": "flag",
+            "confidence": confidence,
+            "functional_probability": functional_prob,
+            "reason": "Place the electronic item label-side up in front of the camera.",
+            "signals": signals,
+        }
 
     if confidence < CONFIDENCE_THRESHOLD:
         bin_decision = "flag"
@@ -62,7 +77,7 @@ async def analyze(b64_image: str) -> dict:
 async def _check_cpsc_recall(model_number: str) -> dict:
     """Check CPSC public recall database for the given model number."""
     try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
             resp = await client.get(
                 CPSC_API_URL,
                 params={"format": "json", "query": model_number, "limit": 1},
