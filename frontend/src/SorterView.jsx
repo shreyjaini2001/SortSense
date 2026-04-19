@@ -74,9 +74,8 @@ export default function SorterView() {
               <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
               <span className="text-white/40 text-xs">{connected ? 'Live' : 'Offline'}</span>
             </div>
-            <Link to="/ops" className="text-white/30 hover:text-white/70 text-xs transition-colors">
-              Ops →
-            </Link>
+            <Link to="/ops" className="text-white/30 hover:text-white/70 text-xs transition-colors">Ops →</Link>
+            <Link to="/arch" className="text-white/30 hover:text-white/70 text-xs transition-colors">Arch →</Link>
           </div>
         </div>
 

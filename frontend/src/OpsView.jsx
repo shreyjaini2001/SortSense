@@ -45,9 +45,12 @@ export default function OpsView() {
         {/* ── Header ── */}
         <header className="flex items-start justify-between mb-8">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-3 mb-1">
               <Link to="/" className="text-slate-400 hover:text-slate-700 text-sm font-medium transition-colors">
                 ← Sorter View
+              </Link>
+              <Link to="/arch" className="text-slate-400 hover:text-slate-700 text-sm font-medium transition-colors">
+                Architecture →
               </Link>
             </div>
             <h1 className="text-3xl font-black text-slate-900 tracking-tight">Ops Dashboard</h1>

@@ -97,18 +97,30 @@ def analyze_food(b64_image: str) -> dict:
 def analyze_clothing(b64_image: str) -> dict:
     """Vision analysis for clothing items."""
     prompt = (
-        "Analyze this donated clothing or textile item. Assess: tears, stains, missing buttons, "
-        "significant fading, overall wear. Also note brand if visible. "
-        "Give a condition score 0-100 (100=like new, 0=destroyed). "
-        "Reply with JSON only, no markdown, example: "
-        "{\"condition_score\": 75, \"issues\": [\"minor fading\"], \"brand\": \"Nike\", "
-        "\"complete\": true, \"confidence\": 0.88, \"reasoning\": \"Good condition with minor wear.\"}"
+        "Analyze this donated clothing item in detail. Answer every field below.\n\n"
+        "1. item_type: what kind of garment is it? (e.g. 'graphic t-shirt', 'polo shirt', 'hoodie', 'jeans', 'dress')\n"
+        "2. brand: brand name if a logo/label is visible, else null\n"
+        "3. print_or_graphic: describe any text, logo, or graphic printed on the item, or null if plain\n"
+        "4. color: main color(s) of the item\n"
+        "5. issues: list every visible problem — be specific: 'rip on left sleeve', 'stain near collar', "
+        "'hole at hem', 'fading throughout', 'pilling on chest', 'missing button', etc. Empty list if none.\n"
+        "6. condition_score: 0-100 (100=like new, 70=good, 50=fair, 30=worn, 0=destroyed)\n"
+        "7. complete: true if no missing parts (buttons, zipper, etc.)\n"
+        "8. confidence: how confident are you 0.0-1.0\n"
+        "9. reasoning: one plain sentence describing the item and its overall condition\n\n"
+        "Reply with JSON only, no markdown, example:\n"
+        "{\"item_type\": \"graphic t-shirt\", \"brand\": \"Nike\", "
+        "\"print_or_graphic\": \"large swoosh logo on chest\", \"color\": \"black\", "
+        "\"issues\": [\"small rip on left sleeve\", \"minor fading\"], "
+        "\"condition_score\": 68, \"complete\": true, \"confidence\": 0.90, "
+        "\"reasoning\": \"Black Nike tee in fair condition with a small sleeve rip and light fading.\"}"
     )
     text = _vision_call(prompt, b64_image)
     result = _parse_json(text)
     if result:
         return result
-    return {"condition_score": 0, "issues": [], "brand": None, "complete": False, "confidence": 0.0, "reasoning": "Could not analyze"}
+    return {"item_type": "clothing", "brand": None, "print_or_graphic": None, "color": None,
+            "issues": [], "condition_score": 0, "complete": False, "confidence": 0.0, "reasoning": "Could not analyze"}
 
 
 def analyze_general(b64_image: str) -> dict:
